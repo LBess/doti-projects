@@ -1,0 +1,36 @@
+export interface GeocodedPoint {
+    lat: number;
+    lng: number;
+}
+
+export interface ProjectLocation {
+    // How the pin was derived: an intersection or bridge crossing ('point'),
+    // the midpoint of a corridor's two cross streets ('corridor'), or the
+    // centroid of one or more named neighborhoods ('neighborhood').
+    kind: 'point' | 'corridor' | 'neighborhood';
+    label: string;
+}
+
+export type UnmappedReason = 'pending' | 'no-location-found' | 'geocode-failed' | 'outside-denver';
+
+// A project as served by the backend, which works out where each one goes on
+// the map: `position` and `location` are set when it can be mapped, and
+// `unmappedReason` says why not otherwise.
+export interface Project {
+    id: string;
+    title: string;
+    description: string;
+    detailUrl?: string;
+    position?: GeocodedPoint;
+    location?: ProjectLocation;
+    unmappedReason?: UnmappedReason;
+}
+
+export interface MappedProject extends Project {
+    position: GeocodedPoint;
+    location: ProjectLocation;
+}
+
+export interface UnmappedProject extends Project {
+    unmappedReason: UnmappedReason;
+}

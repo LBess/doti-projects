@@ -1,0 +1,35 @@
+# Local development: the Go API and its Postgres database.
+# Run the frontend on the host with `npm run dev`; Vite proxies /api to :8080.
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-doti}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-doti}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - '127.0.0.1:5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server:
+    build:
+      context: .
+      target: server
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-doti}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-doti}?sslmode=disable
+      GEOCODING_API_KEY: ${GEOCODING_API_KEY:-}
+      # REFRESH_INTERVAL: 12h
+    ports:
+      - '8080:8080'
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
