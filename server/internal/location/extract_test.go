@@ -146,6 +146,26 @@ func TestExtract(t *testing.T) {
 	})
 }
 
+func TestExtractTitleStreet(t *testing.T) {
+	t.Run("single street named in the title", func(t *testing.T) {
+		g := extract(t, project.KindPoint, "Welton Next Steps",
+			"Welton Next Steps is a planning effort to establish a clear vision for the future of Welton Street.")
+		wantContains(t, g.Queries, 0, "Welton Street", "Denver")
+	})
+
+	t.Run("street mentioned only in the description is ignored", func(t *testing.T) {
+		if g := Extract("Bike Network Study", "Builds on recent work along Colfax Avenue."); g != nil {
+			t.Errorf("got %+v, want nil", g)
+		}
+	})
+
+	t.Run("a neighborhood still wins over the title street", func(t *testing.T) {
+		g := extract(t, project.KindNeighborhood, "Welton Next Steps",
+			"A vision for Welton Street in the Five Points neighborhood.")
+		wantContains(t, g.Queries, 0, "Five Points")
+	})
+}
+
 func TestFindNeighborhoods(t *testing.T) {
 	tests := []struct {
 		name, text string

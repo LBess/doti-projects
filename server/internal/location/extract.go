@@ -69,7 +69,8 @@ func compile(pattern string) *regexp2.Regexp {
 }
 
 var (
-	streetRE = compile(street)
+	streetRE     = compile(street)
+	suffixOnlyRE = compile(`^` + suffix + `$`)
 
 	corridorFromToRE   = compile(`(` + street + `)\s+[Ff]rom\s+(` + street + `)\s+[Tt]o\s+(` + street + `)`)
 	numberedRangeRE    = compile(`\b(` + ordinal + `)\s+(?:[Tt]o|[Aa]nd)\s+(` + ordinal + `)\s+(` + suffix + `)`)
@@ -371,6 +372,49 @@ func tryNeighborhoods(text string) *Guess {
 	return &Guess{Kind: project.KindNeighborhood, Queries: queries, Label: label}
 }
 
+// tryTitleStreet is a last resort for projects that name a single street with
+// no cross streets or bounds, e.g. "Welton Next Steps" / "...the future of
+// Welton Street". It only trusts a street whose name also appears in the
+// title, so a street mentioned in passing in the description ("similar to work
+// on Colfax Avenue") doesn't pin the project to the wrong place.
+func tryTitleStreet(title, text string) *Guess {
+	for _, street := range findStreets(text) {
+		if name := streetName(street); name != "" && mentions(title, name) {
+			return &Guess{
+				Kind:    project.KindPoint,
+				Queries: []string{geocodeQuery(street, "")},
+				Label:   street,
+			}
+		}
+	}
+	return nil
+}
+
+// streetName is the distinguishing word of a street: its last word before the
+// suffix ("Welton" for "Welton Street"), or the whole name for suffix-less
+// streets like "Broadway".
+func streetName(street string) string {
+	words := strings.Fields(street)
+	if len(words) > 1 && suffixOnly(words[len(words)-1]) {
+		words = words[:len(words)-1]
+	}
+	if len(words) == 0 {
+		return ""
+	}
+	return words[len(words)-1]
+}
+
+func suffixOnly(word string) bool {
+	ok, _ := suffixOnlyRE.MatchString(word)
+	return ok
+}
+
+// mentions reports whether text contains word as a whole word.
+func mentions(text, word string) bool {
+	ok, _ := compile(`\b` + regexp.QuoteMeta(word) + `\b`).MatchString(text)
+	return ok
+}
+
 // Extract attempts to guess a geocodable location for a DOTI project from its
 // title and description. It returns nil when no pattern confidently applies
 // (city-wide plans, programs, studies with no single site, etc.) — those
@@ -389,6 +433,7 @@ func Extract(title, description string) *Guess {
 		func() *Guess { return tryIntersection(text) },
 		func() *Guess { return tryBridgeOver(text) },
 		func() *Guess { return tryNeighborhoods(text) },
+		func() *Guess { return tryTitleStreet(title, text) },
 	} {
 		if guess := try(); guess != nil {
 			return guess
