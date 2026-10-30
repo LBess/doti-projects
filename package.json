@@ -14,7 +14,8 @@
   "dependencies": {
     "@vis.gl/react-google-maps": "^1.10.1",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-router": "^8.5.1"
   },
   "devDependencies": {
     "@types/google.maps": "^3.66.4",

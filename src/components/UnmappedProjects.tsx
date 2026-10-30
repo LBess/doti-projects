@@ -13,14 +13,13 @@ const REASON_LABEL: Record<UnmappedProject['unmappedReason'], string> = {
 };
 
 export const UnmappedProjects = ({ projects }: UnmappedProjectsProps) => {
-    if (projects.length === 0) return null;
+    if (projects.length === 0) return <p>Every project is on the map.</p>;
 
     return (
         <section className={styles.unmappedProjects}>
-            <h2>Other projects ({projects.length})</h2>
             <p className={styles.unmappedProjectsHint}>
-                These projects are city-wide, span many neighborhoods, or don't name a specific
-                street location, so they aren't shown on the map.
+                These {projects.length} projects are city-wide, span many neighborhoods, or don't
+                name a specific street location, so they aren't shown on the map.
             </p>
             <ul>
                 {projects.map((project) => (

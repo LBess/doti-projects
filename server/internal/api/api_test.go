@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -110,5 +112,42 @@ func TestHealth(t *testing.T) {
 	}
 	if rec := serve(fakeStore{err: errors.New("down")}, "/healthz"); rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("unhealthy status = %d", rec.Code)
+	}
+}
+
+func TestStaticFrontend(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{"index.html": "INDEX", "assets/app.js": "JS"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := NewHandler(fakeStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)), dir)
+	get := func(target string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		return rec
+	}
+
+	tests := []struct {
+		target string
+		code   int
+		body   string
+	}{
+		{"/", 200, "INDEX"},
+		{"/assets/app.js", 200, "JS"},
+		{"/unmapped", 200, "INDEX"},     // a client-side route
+		{"/unmapped/", 200, "INDEX"},    // with a trailing slash
+		{"/assets/missing.js", 404, ""}, // a missing file is not the app
+		{"/api/nope", 404, ""},          // nor is an unknown API route
+	}
+	for _, tt := range tests {
+		rec := get(tt.target)
+		if rec.Code != tt.code || (tt.body != "" && rec.Body.String() != tt.body) {
+			t.Errorf("GET %s = %d %q, want %d %q", tt.target, rec.Code, rec.Body.String(), tt.code, tt.body)
+		}
 	}
 }

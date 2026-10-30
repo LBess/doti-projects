@@ -6,6 +6,10 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
 
 	"github.com/LBess/doti-projects/server/internal/project"
 	"github.com/LBess/doti-projects/server/internal/store"
@@ -25,9 +29,31 @@ func NewHandler(store Store, log *slog.Logger, staticDir string) http.Handler {
 	mux.HandleFunc("GET /api/projects", handler.projects)
 	mux.HandleFunc("GET /healthz", handler.health)
 	if staticDir != "" {
-		mux.Handle("/", http.FileServer(http.Dir(staticDir)))
+		mux.Handle("/", spaHandler(staticDir))
 	}
 	return mux
+}
+
+// spaHandler serves the built frontend from dir. A path that isn't a file
+// gets index.html, so a client-side route like /unmapped still loads when it's
+// opened directly or reloaded. Paths with a file extension are left to 404
+// (a missing /assets/x.js shouldn't come back as HTML), as is anything under
+// /api/ that no API route matched.
+func spaHandler(dir string) http.Handler {
+	files := http.FileServer(http.Dir(dir))
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		urlPath := path.Clean("/" + request.URL.Path)
+		if strings.HasPrefix(urlPath, "/api/") {
+			http.NotFound(writer, request)
+			return
+		}
+		if info, err := os.Stat(filepath.Join(dir, filepath.FromSlash(urlPath))); err == nil && !info.IsDir() ||
+			urlPath == "/" || path.Ext(urlPath) != "" {
+			files.ServeHTTP(writer, request)
+			return
+		}
+		http.ServeFile(writer, request, filepath.Join(dir, "index.html"))
+	})
 }
 
 type handler struct {

@@ -1,12 +1,5 @@
 import { useState } from 'react';
-import {
-    Map,
-    MapControl,
-    ControlPosition,
-    AdvancedMarker,
-    Pin,
-    InfoWindow,
-} from '@vis.gl/react-google-maps';
+import { Map, AdvancedMarker, Pin, InfoWindow } from '@vis.gl/react-google-maps';
 import { useDenverBoundary } from '../hooks/useDenverBoundary';
 import type { MappedProject } from '../types';
 import styles from './ProjectMap.module.scss';
@@ -35,28 +28,24 @@ export const ProjectMap = ({ projects }: ProjectMapProps) => {
             mapId={MAP_ID}
             defaultCenter={DENVER_CENTER}
             defaultZoom={12}
-            gestureHandling="cooperative"
+            gestureHandling="greedy"
             disableDefaultUI={false}
+            fullscreenControl={false}
             onClick={() => setSelected(null)}
         >
-            <MapControl position={ControlPosition.LEFT_TOP}>
-                <div className={styles.legend}>
-                    <div className={styles.legendItem}>
-                        <span
-                            className={styles.legendSwatch}
-                            style={{ background: NEIGHBORHOOD_COLOR }}
-                        />
-                        Neighborhood
-                    </div>
-                    <div className={styles.legendItem}>
-                        <span
-                            className={styles.legendSwatch}
-                            style={{ background: LOCATION_COLOR }}
-                        />
-                        Point or corridor
-                    </div>
+            <div className={styles.legend}>
+                <div className={styles.legendItem}>
+                    <span
+                        className={styles.legendSwatch}
+                        style={{ background: NEIGHBORHOOD_COLOR }}
+                    />
+                    Neighborhood
                 </div>
-            </MapControl>
+                <div className={styles.legendItem}>
+                    <span className={styles.legendSwatch} style={{ background: LOCATION_COLOR }} />
+                    Point or corridor
+                </div>
+            </div>
 
             {projects.map((project) => (
                 <AdvancedMarker

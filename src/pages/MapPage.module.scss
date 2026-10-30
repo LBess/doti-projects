@@ -1,0 +1,24 @@
+.mapPage {
+    position: relative;
+    height: 100%;
+}
+
+.status {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: min(90%, 60ch);
+    margin: 0;
+    padding: 8px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.statusError {
+    color: #d93025;
+}
