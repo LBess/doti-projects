@@ -1,3 +1,5 @@
+@use '../styles/mixins';
+
 .header {
     position: relative;
     z-index: 2;
@@ -20,25 +22,7 @@
 }
 
 .iconButton {
-    display: grid;
-    place-items: center;
-    width: 40px;
-    height: 40px;
-    padding: 0;
-    border: none;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--text-h);
-    cursor: pointer;
-
-    &:hover {
-        background: var(--border);
-    }
-
-    &:focus-visible {
-        outline: 2px solid var(--accent);
-        outline-offset: 2px;
-    }
+    @include mixins.icon-button;
 }
 
 .menu {

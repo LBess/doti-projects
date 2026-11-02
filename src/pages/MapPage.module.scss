@@ -1,6 +1,14 @@
 .mapPage {
     position: relative;
+    display: flex;
     height: 100%;
+}
+
+// The map takes whatever width the drawer leaves.
+.mapArea {
+    position: relative;
+    flex: 1;
+    min-width: 0;
 }
 
 .status {
@@ -21,4 +29,29 @@
 
 .statusError {
     color: #d93025;
+}
+
+// Reopens the drawer once it's been closed. Sits over the map, so like the
+// legend it stays light regardless of the color scheme.
+.drawerToggle {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 2px;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    color: #202124;
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+
+    &:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+    }
 }
