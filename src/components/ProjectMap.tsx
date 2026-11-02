@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { Map, AdvancedMarker, Pin, InfoWindow } from '@vis.gl/react-google-maps';
+import { useEffect } from 'react';
+import { Map, AdvancedMarker, Pin, useMap } from '@vis.gl/react-google-maps';
 import { useDenverBoundary } from '../hooks/useDenverBoundary';
-import type { MappedProject } from '../types';
+import type { GeocodedPoint, MappedProject } from '../types';
 import styles from './ProjectMap.module.scss';
 
 const DENVER_CENTER = { lat: 39.7392, lng: -104.9903 };
@@ -15,11 +15,22 @@ const LOCATION_COLOR = '#e81d1a';
 
 interface ProjectMapProps {
     projects: MappedProject[];
+    selectedId: string | null;
+    onSelect: (id: string) => void;
 }
 
-export const ProjectMap = ({ projects }: ProjectMapProps) => {
-    const [selected, setSelected] = useState<MappedProject | null>(null);
+/** Pans the surrounding map to `position` whenever it changes. */
+const PanTo = ({ position }: { position: GeocodedPoint | undefined }) => {
+    const map = useMap();
 
+    useEffect(() => {
+        if (map && position) map.panTo(position);
+    }, [map, position]);
+
+    return null;
+};
+
+export const ProjectMap = ({ projects, selectedId, onSelect }: ProjectMapProps) => {
     useDenverBoundary();
 
     return (
@@ -31,7 +42,6 @@ export const ProjectMap = ({ projects }: ProjectMapProps) => {
             gestureHandling="greedy"
             disableDefaultUI={false}
             fullscreenControl={false}
-            onClick={() => setSelected(null)}
         >
             <div className={styles.legend}>
                 <div className={styles.legendItem}>
@@ -47,46 +57,29 @@ export const ProjectMap = ({ projects }: ProjectMapProps) => {
                 </div>
             </div>
 
-            {projects.map((project) => (
-                <AdvancedMarker
-                    key={project.id}
-                    position={project.position}
-                    title={project.title}
-                    onClick={() => setSelected(project)}
-                >
-                    {project.location.kind === 'neighborhood' ? (
+            {projects.map((project) => {
+                const color =
+                    project.location.kind === 'neighborhood' ? NEIGHBORHOOD_COLOR : LOCATION_COLOR;
+                const isSelected = project.id === selectedId;
+                return (
+                    <AdvancedMarker
+                        key={project.id}
+                        position={project.position}
+                        title={project.title}
+                        zIndex={isSelected ? 1 : 0}
+                        onClick={() => onSelect(project.id)}
+                    >
                         <Pin
-                            background={NEIGHBORHOOD_COLOR}
-                            borderColor={NEIGHBORHOOD_COLOR}
+                            background={color}
+                            borderColor={color}
                             glyphColor="#ffffff"
+                            scale={isSelected ? 1.4 : 1}
                         />
-                    ) : (
-                        <Pin
-                            background={LOCATION_COLOR}
-                            borderColor={LOCATION_COLOR}
-                            glyphColor="#ffffff"
-                        />
-                    )}
-                </AdvancedMarker>
-            ))}
+                    </AdvancedMarker>
+                );
+            })}
 
-            {selected && (
-                <InfoWindow
-                    headerDisabled
-                    position={selected.position}
-                    onCloseClick={() => setSelected(null)}
-                >
-                    <div className={styles.infoWindow}>
-                        <h3>{selected.title}</h3>
-                        <p className={styles.infoWindowDescription}>{selected.description}</p>
-                        {selected.detailUrl && (
-                            <a href={selected.detailUrl} target="_blank" rel="noreferrer">
-                                Read more about {selected.title}
-                            </a>
-                        )}
-                    </div>
-                </InfoWindow>
-            )}
+            <PanTo position={projects.find((p) => p.id === selectedId)?.position} />
         </Map>
     );
 };

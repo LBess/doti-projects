@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@vis.gl/react-google-maps": "^1.10.1",
+    "clsx": "^2.1.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router": "^8.5.1"
