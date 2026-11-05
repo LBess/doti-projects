@@ -1,5 +1,6 @@
-// Package refresh periodically re-scrapes the DOTI page, reconciles the
-// database with it, and works out where any new projects belong on the map.
+// Package refresh periodically re-scrapes a city's projects page, reconciles
+// the database with it, and works out where any new projects belong on the
+// map. One Refresher serves one city.
 package refresh
 
 import (
@@ -14,7 +15,7 @@ import (
 
 // minKeepRatio is the smallest share of the current active projects a scrape
 // must return to be trusted. A scrape that comes back much smaller is far more
-// likely a broken page or parser than DOTI finishing half its projects at
+// likely a broken page or parser than a city finishing half its projects at
 // once, and acting on it would mark them all completed.
 const minKeepRatio = 0.5
 
@@ -23,10 +24,10 @@ type Source interface {
 }
 
 type Store interface {
-	CountActive(ctx context.Context) (int, error)
-	Reconcile(ctx context.Context, runStartedAt time.Time, scraped []project.Project) (store.ReconcileResult, error)
-	ListPending(ctx context.Context) ([]project.Project, error)
-	SetPlacement(ctx context.Context, sourceKey string, placement project.Placement) error
+	CountActive(ctx context.Context, city string) (int, error)
+	Reconcile(ctx context.Context, city string, runStartedAt time.Time, scraped []project.Project) (store.ReconcileResult, error)
+	ListPending(ctx context.Context, city string) ([]project.Project, error)
+	SetPlacement(ctx context.Context, city, sourceKey string, placement project.Placement) error
 }
 
 // Locator works out where a project belongs on the map. An error means the
@@ -36,6 +37,8 @@ type Locator interface {
 }
 
 type Refresher struct {
+	// City is the ID of the city whose projects this refreshes.
+	City   string
 	Source Source
 	Store  Store
 	// Locator may be nil, in which case projects are stored but never placed.
@@ -44,8 +47,8 @@ type Refresher struct {
 	now     func() time.Time
 }
 
-func New(source Source, store Store, locator Locator, log *slog.Logger) *Refresher {
-	return &Refresher{Source: source, Store: store, Locator: locator, Log: log, now: time.Now}
+func New(city string, source Source, store Store, locator Locator, log *slog.Logger) *Refresher {
+	return &Refresher{City: city, Source: source, Store: store, Locator: locator, Log: log.With("city", city), now: time.Now}
 }
 
 // Run refreshes once immediately, then every interval until ctx is cancelled.
@@ -65,7 +68,7 @@ func (r *Refresher) Run(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// Refresh scrapes the page and, if the result is trustworthy, reconciles the
+// Refresh scrapes the city's page and, if the result is trustworthy, reconciles the
 // database with it, then places any projects that don't have a location yet.
 // A suspicious scrape is returned as an error and leaves the database
 // untouched.
@@ -76,7 +79,7 @@ func (refresher *Refresher) Refresh(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	active, err := refresher.Store.CountActive(ctx)
+	active, err := refresher.Store.CountActive(ctx, refresher.City)
 	if err != nil {
 		return fmt.Errorf("count active projects: %w", err)
 	}
@@ -84,7 +87,7 @@ func (refresher *Refresher) Refresh(ctx context.Context) error {
 		return err
 	}
 
-	result, err := refresher.Store.Reconcile(ctx, startedAt, projects)
+	result, err := refresher.Store.Reconcile(ctx, refresher.City, startedAt, projects)
 	if err != nil {
 		return fmt.Errorf("reconcile projects: %w", err)
 	}
@@ -103,7 +106,7 @@ func (refresher *Refresher) locate(ctx context.Context) {
 	if refresher.Locator == nil {
 		return
 	}
-	pending, err := refresher.Store.ListPending(ctx)
+	pending, err := refresher.Store.ListPending(ctx, refresher.City)
 	if err != nil {
 		refresher.Log.Error("list pending projects", "error", err)
 		return
@@ -120,7 +123,7 @@ func (refresher *Refresher) locate(ctx context.Context) {
 			failed++
 			continue
 		}
-		if err := refresher.Store.SetPlacement(ctx, p.SourceKey, placement); err != nil {
+		if err := refresher.Store.SetPlacement(ctx, refresher.City, p.SourceKey, placement); err != nil {
 			refresher.Log.Error("save placement", "project", p.SourceKey, "error", err)
 			failed++
 			continue
@@ -137,7 +140,7 @@ func (refresher *Refresher) locate(ctx context.Context) {
 // (a first run) there is no baseline, so any non-empty scrape is accepted.
 func checkScrape(projects, active int) error {
 	if projects == 0 {
-		return fmt.Errorf("scrape found 0 projects; the DOTI page structure may have changed")
+		return fmt.Errorf("scrape found 0 projects; the page structure may have changed")
 	}
 	if float64(projects) < float64(active)*minKeepRatio {
 		return fmt.Errorf("scrape found %d projects but %d are active (under %.0f%%); refusing to apply it",

@@ -1,4 +1,4 @@
-// Package store persists DOTI projects in Postgres.
+// Package store persists city projects in Postgres.
 package store
 
 import (
@@ -64,15 +64,15 @@ func (store *Store) Close() { store.pool.Close() }
 
 func (store *Store) Ping(ctx context.Context) error { return store.pool.Ping(ctx) }
 
-// List returns the projects with the given status, oldest first, with where
-// each one goes on the map (or why it isn't).
+// List returns the projects of every city with the given status, oldest first,
+// with where each one goes on the map (or why it isn't).
 func (store *Store) List(ctx context.Context, status string) ([]project.Project, error) {
 	rows, err := store.pool.Query(ctx, `
-		SELECT source_key, title, description, detail_url,
+		SELECT city, source_key, title, description, detail_url,
 		       geocode_status, location_kind, location_label, lat, lng
 		FROM projects
 		WHERE status = $1
-		ORDER BY first_seen_at, source_key`, status)
+		ORDER BY first_seen_at, city, source_key`, status)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func (store *Store) List(ctx context.Context, status string) ([]project.Project,
 			kind, label *string
 			lat, lng    *float64
 		)
-		if err := rows.Scan(&p.SourceKey, &p.Title, &p.Description, &p.DetailURL,
+		if err := rows.Scan(&p.City, &p.SourceKey, &p.Title, &p.Description, &p.DetailURL,
 			&placement, &kind, &label, &lat, &lng); err != nil {
 			return nil, err
 		}
@@ -101,14 +101,14 @@ func (store *Store) List(ctx context.Context, status string) ([]project.Project,
 	return projects, rows.Err()
 }
 
-// ListPending returns the active projects that still need a placement, oldest
-// first.
-func (store *Store) ListPending(ctx context.Context) ([]project.Project, error) {
+// ListPending returns the city's active projects that still need a placement,
+// oldest first.
+func (store *Store) ListPending(ctx context.Context, city string) ([]project.Project, error) {
 	rows, err := store.pool.Query(ctx, `
 		SELECT source_key, title, description, detail_url
 		FROM projects
-		WHERE status = $1 AND geocode_status = $2
-		ORDER BY first_seen_at, source_key`, StatusActive, project.Pending)
+		WHERE city = $1 AND status = $2 AND geocode_status = $3
+		ORDER BY first_seen_at, source_key`, city, StatusActive, project.Pending)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +116,7 @@ func (store *Store) ListPending(ctx context.Context) ([]project.Project, error) 
 
 	projects := []project.Project{}
 	for rows.Next() {
-		var p project.Project
+		p := project.Project{City: city}
 		if err := rows.Scan(&p.SourceKey, &p.Title, &p.Description, &p.DetailURL); err != nil {
 			return nil, err
 		}
@@ -126,7 +126,7 @@ func (store *Store) ListPending(ctx context.Context) ([]project.Project, error) 
 }
 
 // SetPlacement records where a project goes on the map, or why it can't.
-func (store *Store) SetPlacement(ctx context.Context, sourceKey string, placement project.Placement) error {
+func (store *Store) SetPlacement(ctx context.Context, city, sourceKey string, placement project.Placement) error {
 	var kind, label *string
 	var lat, lng *float64
 	if placement.Location != nil {
@@ -138,14 +138,15 @@ func (store *Store) SetPlacement(ctx context.Context, sourceKey string, placemen
 	_, err := store.pool.Exec(ctx, `
 		UPDATE projects
 		SET geocode_status = $2, location_kind = $3, location_label = $4, lat = $5, lng = $6
-		WHERE source_key = $1`,
-		sourceKey, placement.Status, kind, label, lat, lng)
+		WHERE city = $7 AND source_key = $1`,
+		sourceKey, placement.Status, kind, label, lat, lng, city)
 	return err
 }
 
-func (store *Store) CountActive(ctx context.Context) (int, error) {
+// CountActive is the number of the city's active projects.
+func (store *Store) CountActive(ctx context.Context, city string) (int, error) {
 	var n int
-	err := store.pool.QueryRow(ctx, `SELECT count(*) FROM projects WHERE status = $1`, StatusActive).Scan(&n)
+	err := store.pool.QueryRow(ctx, `SELECT count(*) FROM projects WHERE city = $1 AND status = $2`, city, StatusActive).Scan(&n)
 	return n, err
 }
 
@@ -155,19 +156,20 @@ type ReconcileResult struct {
 	Completed int // were active, absent from this scrape
 }
 
-// Reconcile brings the table in line with a trusted scrape, in one transaction:
+// Reconcile brings the city's projects in line with a trusted scrape of its
+// page, in one transaction (other cities' projects are never touched):
 //
 //  1. Upsert every scraped project as active, stamping last_seen_at with
 //     runStartedAt. This also revives a completed project that reappears,
 //     and sends a project whose title or description changed back to pending
 //     so its location is worked out again.
-//  2. Mark completed every active project whose last_seen_at is older than
+//  2. Mark completed every active project of the city whose last_seen_at is older than
 //     runStartedAt, i.e. that was not in this scrape.
 //
 // runStartedAt is stamped from the caller's clock rather than now() so that
 // step 2's comparison can't be thrown off by clock skew or by the time the
 // upserts take.
-func (store *Store) Reconcile(ctx context.Context, runStartedAt time.Time, scraped []project.Project) (ReconcileResult, error) {
+func (store *Store) Reconcile(ctx context.Context, city string, runStartedAt time.Time, scraped []project.Project) (ReconcileResult, error) {
 	var result ReconcileResult
 	runStartedAt = runStartedAt.UTC().Truncate(time.Microsecond) // Postgres timestamptz precision
 
@@ -175,9 +177,9 @@ func (store *Store) Reconcile(ctx context.Context, runStartedAt time.Time, scrap
 		batch := &pgx.Batch{}
 		for _, p := range scraped {
 			batch.Queue(`
-				INSERT INTO projects (source_key, title, description, detail_url, status, first_seen_at, last_seen_at)
-				VALUES ($1, $2, $3, $4, $5, $6, $6)
-				ON CONFLICT (source_key) DO UPDATE SET
+				INSERT INTO projects (city, source_key, title, description, detail_url, status, first_seen_at, last_seen_at)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+				ON CONFLICT (city, source_key) DO UPDATE SET
 					title        = EXCLUDED.title,
 					description  = EXCLUDED.description,
 					detail_url   = EXCLUDED.detail_url,
@@ -188,8 +190,8 @@ func (store *Store) Reconcile(ctx context.Context, runStartedAt time.Time, scrap
 						THEN projects.geocode_status
 						ELSE 'pending'
 					END
-				RETURNING first_seen_at = $6`,
-				p.SourceKey, p.Title, p.Description, p.DetailURL, StatusActive, runStartedAt)
+				RETURNING first_seen_at = $7`,
+				city, p.SourceKey, p.Title, p.Description, p.DetailURL, StatusActive, runStartedAt)
 		}
 
 		results := tx.SendBatch(ctx, batch)
@@ -209,8 +211,8 @@ func (store *Store) Reconcile(ctx context.Context, runStartedAt time.Time, scrap
 
 		tag, err := tx.Exec(ctx, `
 			UPDATE projects SET status = $1
-			WHERE status = $2 AND last_seen_at < $3`,
-			StatusCompleted, StatusActive, runStartedAt)
+			WHERE city = $2 AND status = $3 AND last_seen_at < $4`,
+			StatusCompleted, city, StatusActive, runStartedAt)
 		if err != nil {
 			return fmt.Errorf("complete missing projects: %w", err)
 		}

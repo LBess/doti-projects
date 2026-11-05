@@ -19,7 +19,7 @@ func wantContains(t *testing.T, queries []string, i int, substrs ...string) {
 
 func extract(t *testing.T, kind, title, description string) *Guess {
 	t.Helper()
-	g := Extract(title, description)
+	g := Extract(title, description, DenverNeighborhoods)
 	if g == nil || g.Kind != kind {
 		t.Fatalf("Extract(%q) = %+v, want kind %q", title, g, kind)
 	}
@@ -80,14 +80,14 @@ func TestExtract(t *testing.T) {
 
 	t.Run("city-wide project with no specific street location", func(t *testing.T) {
 		if g := Extract("Neighborhood Intersection Improvements Project",
-			"This citywide program identifies and improves intersections across many Denver neighborhoods based on safety data."); g != nil {
+			"This citywide program identifies and improves intersections across many Denver neighborhoods based on safety data.", DenverNeighborhoods); g != nil {
 			t.Errorf("got %+v, want nil", g)
 		}
 	})
 
 	t.Run("plan or program with no location signal", func(t *testing.T) {
 		if g := Extract("Denver Moves Everyone 2050",
-			"The citywide transportation plan that guides investments across Denver over the next several decades."); g != nil {
+			"The citywide transportation plan that guides investments across Denver over the next several decades.", DenverNeighborhoods); g != nil {
 			t.Errorf("got %+v, want nil", g)
 		}
 	})
@@ -95,7 +95,7 @@ func TestExtract(t *testing.T) {
 	t.Run("single named neighborhood", func(t *testing.T) {
 		g := extract(t, project.KindNeighborhood, "GES Safer Streets",
 			"This project will study and implement safety improvements in the Globeville neighborhood.")
-		if want := []string{"Globeville, Denver, CO"}; !reflect.DeepEqual(g.Queries, want) {
+		if want := []string{"Globeville"}; !reflect.DeepEqual(g.Queries, want) {
 			t.Errorf("queries = %v, want %v", g.Queries, want)
 		}
 	})
@@ -103,7 +103,7 @@ func TestExtract(t *testing.T) {
 	t.Run("multiple adjacent neighborhoods", func(t *testing.T) {
 		g := extract(t, project.KindNeighborhood, "Globeville Elyria-Swansea (GES) Program of Projects",
 			"A collection of improvements across the Globeville and Elyria-Swansea neighborhoods.")
-		if want := []string{"Globeville, Denver, CO", "Elyria-Swansea, Denver, CO"}; !reflect.DeepEqual(g.Queries, want) {
+		if want := []string{"Globeville", "Elyria-Swansea"}; !reflect.DeepEqual(g.Queries, want) {
 			t.Errorf("queries = %v, want %v", g.Queries, want)
 		}
 	})
@@ -115,12 +115,12 @@ func TestExtract(t *testing.T) {
 
 	t.Run("Lane in a project title is a project word", func(t *testing.T) {
 		got := Extract("Alameda Lane Repurposing Demonstration Project – Lincoln Street to Franklin Street",
-			"The Alameda Lane Repurposing Demonstration Project aims to improve safety along the Alameda Avenue corridor.")
+			"The Alameda Lane Repurposing Demonstration Project aims to improve safety along the Alameda Avenue corridor.", DenverNeighborhoods)
 		want := &Guess{
 			Kind: project.KindCorridor,
 			Queries: []string{
-				"Lincoln Street & Alameda Avenue, Denver, CO",
-				"Franklin Street & Alameda Avenue, Denver, CO",
+				"Lincoln Street & Alameda Avenue",
+				"Franklin Street & Alameda Avenue",
 			},
 			Label: "Alameda Avenue: Lincoln Street to Franklin Street",
 		}
@@ -131,12 +131,12 @@ func TestExtract(t *testing.T) {
 
 	t.Run("corridor bounded by A to the South and B to the North", func(t *testing.T) {
 		got := Extract("Federal Boulevard Improvements",
-			"Improvements to enhance the Federal Blvd. corridor bounded by Floyd Ave. to the South and Columbine Rd. to the North.")
+			"Improvements to enhance the Federal Blvd. corridor bounded by Floyd Ave. to the South and Columbine Rd. to the North.", DenverNeighborhoods)
 		want := &Guess{
 			Kind: project.KindCorridor,
 			Queries: []string{
-				"Floyd Ave & Federal Boulevard, Denver, CO",
-				"Columbine Rd & Federal Boulevard, Denver, CO",
+				"Floyd Ave & Federal Boulevard",
+				"Columbine Rd & Federal Boulevard",
 			},
 			Label: "Federal Boulevard: Floyd Ave to Columbine Rd",
 		}
@@ -150,11 +150,11 @@ func TestExtractTitleStreet(t *testing.T) {
 	t.Run("single street named in the title", func(t *testing.T) {
 		g := extract(t, project.KindPoint, "Welton Next Steps",
 			"Welton Next Steps is a planning effort to establish a clear vision for the future of Welton Street.")
-		wantContains(t, g.Queries, 0, "Welton Street", "Denver")
+		wantContains(t, g.Queries, 0, "Welton Street")
 	})
 
 	t.Run("street mentioned only in the description is ignored", func(t *testing.T) {
-		if g := Extract("Bike Network Study", "Builds on recent work along Colfax Avenue."); g != nil {
+		if g := Extract("Bike Network Study", "Builds on recent work along Colfax Avenue.", DenverNeighborhoods); g != nil {
 			t.Errorf("got %+v, want nil", g)
 		}
 	})
@@ -192,9 +192,20 @@ func TestFindNeighborhoods(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := findNeighborhoods(tt.text); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("findNeighborhoods(%q) = %v, want %v", tt.text, got, tt.want)
+			if got := DenverNeighborhoods.find(tt.text); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("DenverNeighborhoods.find(%q) = %v, want %v", tt.text, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestExtractWithoutNeighborhoods(t *testing.T) {
+	// A city with no neighborhood list never falls back to Denver's.
+	title, desc := "Globeville Safety Study", "This project will study and implement safety improvements in the Globeville neighborhood."
+	if g := Extract(title, desc, nil); g != nil {
+		t.Errorf("got %+v, want nil", g)
+	}
+	if g := Extract(title, desc, DenverNeighborhoods); g == nil || g.Kind != project.KindNeighborhood {
+		t.Errorf("with Denver's neighborhoods got %+v, want a neighborhood guess", g)
 	}
 }

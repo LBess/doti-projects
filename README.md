@@ -33,7 +33,7 @@ frontend fetches the projects from `GET /api/projects` and renders the map.
      a third of DOTI's current projects are single-site; the rest are
      citywide/multi-neighborhood programs.
 3. **Geocode** (`server/internal/geocode`) — location guesses are resolved to
-   lat/lng via the Google Geocoding API, biased to the Denver area, and a
+   lat/lng via the Google Geocoding API, biased to the project's city, and a
    result that falls outside the city limit is discarded. The outcome is
    stored on the project, so each project is geocoded once: again only if its
    title or description changes, or if the attempt failed for a transient
@@ -95,9 +95,31 @@ until it finishes (a second or two).
   geocoding quota. Each project is geocoded once and the result is stored, so
   steady-state usage is only the handful of projects DOTI adds between
   refreshes. Wiping the database re-geocodes everything.
-- **The Denver boundary exists twice.** The server checks geocoded points
-  against `server/internal/geocode/denver_boundary.json`, and the frontend
-  draws `src/data/denverBoundary.json`. They are copies; update both.
+- **Neighborhood fallback is Denver-only.** Other cities have no neighborhood
+  list yet, so their projects are only pinned from streets/intersections.
+
+## Cities
+
+The app covers several cities in the Denver metro. Each city is an entry in
+`server/internal/city` (id, name, boundary color, the geocoder's bias bounds,
+its boundary polygon) and has its own scraper and its own refresh loop, so one
+city's broken page never affects another's. Every project row carries its
+`city`, and a project's identity is `(city, source_key)`.
+
+Boundaries live once, in `server/internal/city/boundaries/<id>.json` (a GeoJSON
+MultiPolygon's coordinates: polygons of an outer ring plus holes). The server
+uses them to discard geocoded points outside the city, and serves them from
+`GET /api/cities` for the frontend to draw in each city's color.
+
+| City     | Source                                                                                                                  |
+| -------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Denver   | the DOTI Projects page (`scraper.Fetcher`)                                                                              |
+| Lakewood | [Cone Zone](https://www.lakewoodco.gov/Local-Government/Departments/Public-Works/Cone-Zone) (`scraper.LakewoodFetcher`) |
+
+**Adding a city:** add `boundaries/<id>.json` (e.g. from Census TIGERweb's
+Incorporated Places layer) and a `city.City` entry in `city.go`/`All`, write a
+scraper that returns `[]project.Project`, and register it in
+`cmd/server/main.go`. No frontend or migration change is needed.
 
 ## Backend
 
@@ -108,14 +130,16 @@ until it finishes (a second or two).
 | `DATABASE_URL`     | — (required)               | Postgres connection string                                |
 | `PORT`             | `8080`                     | HTTP port                                                 |
 | `REFRESH_INTERVAL` | `12h`                      | How often to re-scrape the DOTI page                      |
-| `DOTI_URL`         | the DOTI Projects page     | Page to scrape                                            |
+| `DOTI_URL`         | the DOTI Projects page     | Denver page to scrape                                     |
+| `LAKEWOOD_URL`     | Lakewood's Cone Zone page  | Lakewood page to scrape                                   |
 | `STATIC_DIR`       | — (unset)                  | If set, also serve the built frontend from this directory |
 | `GEOCODING_API_KEY`| — (unset)                  | Google Geocoding API key; without it projects get no pins |
 
-Endpoints: `GET /api/projects` (active projects; `?status=completed` for
-finished ones) and `GET /healthz`. Each project carries `position` and
+Endpoints: `GET /api/projects` (active projects of every city; `?status=completed` for
+finished ones), `GET /api/cities` and `GET /healthz`. Each project carries its `city` id,
+`position` and
 `location` (`kind` + `label`) when it could be mapped, and `unmappedReason`
-(`pending`, `no-location-found`, `geocode-failed` or `outside-denver`) when not. Migrations in
+(`pending`, `no-location-found`, `geocode-failed` or `outside-city`) when not. Migrations in
 `server/internal/store/migrations` run automatically on startup. There's no
 authentication — it's meant to be reachable only over the VPN.
 

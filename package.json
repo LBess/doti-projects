@@ -12,6 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.106.1",
     "@vis.gl/react-google-maps": "^1.10.1",
     "clsx": "^2.1.1",
     "react": "^19.2.8",

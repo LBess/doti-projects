@@ -151,3 +151,29 @@ func TestStaticFrontend(t *testing.T) {
 		}
 	}
 }
+
+func TestCities(t *testing.T) {
+	rec := serve(fakeStore{}, "/api/cities")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	var got []struct {
+		ID       string           `json:"id"`
+		Name     string           `json:"name"`
+		Color    string           `json:"color"`
+		Boundary [][][][2]float64 `json:"boundary"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{}
+	for _, c := range got {
+		ids = append(ids, c.ID)
+		if c.Name == "" || c.Color == "" || len(c.Boundary) == 0 || len(c.Boundary[0]) == 0 || len(c.Boundary[0][0]) < 3 {
+			t.Errorf("city %q is missing data", c.ID)
+		}
+	}
+	if strings.Join(ids, ",") != "denver,lakewood" {
+		t.Errorf("cities = %v", ids)
+	}
+}

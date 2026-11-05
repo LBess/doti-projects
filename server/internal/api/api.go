@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/LBess/doti-projects/server/internal/city"
 	"github.com/LBess/doti-projects/server/internal/project"
 	"github.com/LBess/doti-projects/server/internal/store"
 )
@@ -27,6 +28,7 @@ func NewHandler(store Store, log *slog.Logger, staticDir string) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/projects", handler.projects)
+	mux.HandleFunc("GET /api/cities", handler.cities)
 	mux.HandleFunc("GET /healthz", handler.health)
 	if staticDir != "" {
 		mux.Handle("/", spaHandler(staticDir))
@@ -81,6 +83,14 @@ func (handler *handler) projects(writer http.ResponseWriter, request *http.Reque
 	writer.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(writer).Encode(projects); err != nil {
 		handler.log.Error("encode projects", "error", err)
+	}
+}
+
+// cities serves the cities we map, with their boundaries for drawing.
+func (handler *handler) cities(writer http.ResponseWriter, request *http.Request) {
+	writer.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(writer).Encode(city.All()); err != nil {
+		handler.log.Error("encode cities", "error", err)
 	}
 }
 

@@ -1,4 +1,4 @@
-// Package location guesses a geocodable place for a DOTI project from its
+// Package location guesses a geocodable place for a city project from its
 // free-form title and description.
 //
 // The heuristics are regexes over prose, so they use regexp2 (a backtracking
@@ -27,8 +27,6 @@ type Guess struct {
 	Label   string
 }
 
-const citySuffix = "Denver, CO"
-
 // Street-name suffix words, spelled out or abbreviated. Used to recognize a
 // token sequence as a plausible street name rather than arbitrary prose. The
 // trailing `(?![a-z])` is load-bearing: without it, the un-anchored "St"
@@ -45,7 +43,7 @@ const nameWord = `(?!North\b|South\b|East\b|West\b)[A-Z][a-zA-Z']*`
 const ordinal = `\d+(?:st|nd|rd|th)`
 const core = `(?:` + nameWord + `|` + ordinal + `)`
 
-// A handful of major Denver streets/highways that are commonly referenced
+// A handful of major Denver-area streets/highways that are commonly referenced
 // but don't take any of the generic suffixes above (nobody writes "Broadway
 // St." or "I-25 Rd."), so without this they'd never match street at all —
 // which silently breaks any pattern where one of the two bounds is one of
@@ -165,11 +163,14 @@ func refineCorridor(corridor, text string) string {
 	return cleaned
 }
 
+// geocodeQuery is the text to geocode for a place, or for the intersection
+// of place and other. It names no city; the caller adds the one it is
+// geocoding in.
 func geocodeQuery(place, other string) string {
 	if other != "" {
-		return fmt.Sprintf("%s & %s, %s", place, other, citySuffix)
+		return fmt.Sprintf("%s & %s", place, other)
 	}
-	return fmt.Sprintf("%s, %s", place, citySuffix)
+	return place
 }
 
 func isBareOrdinal(s string) bool {
@@ -351,13 +352,16 @@ func intersection(a, b string) *Guess {
 	}
 }
 
-// tryNeighborhoods finds one or more named Denver neighborhoods, e.g.
+// tryNeighborhoods finds one or more named neighborhoods of the city, e.g.
 // "Globeville Elyria-Swansea (GES)" — the pin is placed at the centroid of
 // whichever ones are found. This is the last resort: it only runs once every
 // street-based pattern above has already failed to find anything more
 // specific.
-func tryNeighborhoods(text string) *Guess {
-	names := findNeighborhoods(text)
+func tryNeighborhoods(text string, hoods *Neighborhoods) *Guess {
+	if hoods == nil {
+		return nil
+	}
+	names := hoods.find(text)
 	if len(names) == 0 {
 		return nil
 	}
@@ -419,7 +423,10 @@ func mentions(text, word string) bool {
 // title and description. It returns nil when no pattern confidently applies
 // (city-wide plans, programs, studies with no single site, etc.) — those
 // projects are surfaced as unmapped instead of getting a pin.
-func Extract(title, description string) *Guess {
+//
+// hoods is the city's neighborhoods, or nil to skip the neighborhood fallback.
+// The queries in the Guess don't name a city; the caller appends one.
+func Extract(title, description string, hoods *Neighborhoods) *Guess {
 	text := title + ". " + description
 
 	for _, try := range []func() *Guess{
@@ -432,7 +439,7 @@ func Extract(title, description string) *Guess {
 		func() *Guess { return tryIntersection(title) },
 		func() *Guess { return tryIntersection(text) },
 		func() *Guess { return tryBridgeOver(text) },
-		func() *Guess { return tryNeighborhoods(text) },
+		func() *Guess { return tryNeighborhoods(text, hoods) },
 		func() *Guess { return tryTitleStreet(title, text) },
 	} {
 		if guess := try(); guess != nil {
