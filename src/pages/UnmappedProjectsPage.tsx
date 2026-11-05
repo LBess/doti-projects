@@ -8,7 +8,7 @@ export const UnmappedProjectsPage = () => {
     return (
         <div className={styles.page}>
             {status === 'error' && <p className={styles.error}>{error}</p>}
-            {(status === 'idle' || status === 'loading') && <p>Loading current projects…</p>}
+            {status === 'loading' && <p>Loading current projects…</p>}
             {status === 'ready' && <UnmappedProjects projects={unmapped} />}
         </div>
     );

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Map, AdvancedMarker, Pin, useMap } from '@vis.gl/react-google-maps';
-import { useDenverBoundary } from '../hooks/useDenverBoundary';
-import type { GeocodedPoint, MappedProject } from '../types';
+import { useCityBoundaries } from '../hooks/useCityBoundaries';
+import type { City, GeocodedPoint, MappedProject } from '../types';
 import styles from './ProjectMap.module.scss';
 
 const DENVER_CENTER = { lat: 39.7392, lng: -104.9903 };
@@ -14,6 +14,7 @@ const NEIGHBORHOOD_COLOR = '#0b4a9e';
 const LOCATION_COLOR = '#e81d1a';
 
 interface ProjectMapProps {
+    cities: City[];
     projects: MappedProject[];
     selectedId: string | null;
     onSelect: (id: string) => void;
@@ -30,8 +31,8 @@ const PanTo = ({ position }: { position: GeocodedPoint | undefined }) => {
     return null;
 };
 
-export const ProjectMap = ({ projects, selectedId, onSelect }: ProjectMapProps) => {
-    useDenverBoundary();
+export const ProjectMap = ({ cities, projects, selectedId, onSelect }: ProjectMapProps) => {
+    useCityBoundaries(cities);
 
     return (
         <Map

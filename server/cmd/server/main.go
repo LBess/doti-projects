@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/LBess/doti-projects/server/internal/api"
+	"github.com/LBess/doti-projects/server/internal/city"
 	"github.com/LBess/doti-projects/server/internal/geocode"
 	"github.com/LBess/doti-projects/server/internal/refresh"
 	"github.com/LBess/doti-projects/server/internal/scraper"
@@ -55,8 +56,15 @@ func run(log *slog.Logger) error {
 	} else {
 		log.Warn("GEOCODING_API_KEY is not set; projects will not be placed on the map")
 	}
-	refresher := refresh.New(scraper.NewFetcher(env("DOTI_URL", scraper.DefaultURL)), db, locator, log)
-	go refresher.Run(ctx, interval)
+	// Each city has its own page to scrape and its own refresher, so one city's
+	// broken page never holds up (or rejects) another's.
+	sources := map[string]refresh.Source{
+		city.Denver.ID:   scraper.NewFetcher(env("DOTI_URL", scraper.DefaultURL)),
+		city.Lakewood.ID: scraper.NewLakewoodFetcher(env("LAKEWOOD_URL", scraper.LakewoodURL)),
+	}
+	for _, c := range city.All() {
+		go refresh.New(c.ID, sources[c.ID], db, locator, log).Run(ctx, interval)
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + env("PORT", "8080"),

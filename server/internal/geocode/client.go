@@ -1,6 +1,6 @@
 // Package geocode turns a project's text into a map position: it guesses a
 // location (see package location), geocodes it with Google, and checks that
-// the result lands inside Denver.
+// the result lands inside the city.
 package geocode
 
 import (
@@ -12,15 +12,11 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/LBess/doti-projects/server/internal/city"
 	"github.com/LBess/doti-projects/server/internal/project"
 )
 
 const defaultBaseURL = "https://maps.googleapis.com/maps/api/geocode/json"
-
-// denverBounds is roughly the Denver city/county limits, used to bias
-// ambiguous street-name matches (e.g. "Broadway") toward the right city.
-// Google's format is "south,west|north,east".
-const denverBounds = "39.6,-105.15|39.95,-104.6"
 
 // ErrNotFound means Google understood the request but has no match for the
 // query. Unlike every other error from Geocode it is a permanent answer, not
@@ -48,13 +44,14 @@ type response struct {
 	} `json:"results"`
 }
 
-// Geocode resolves query to a coordinate, biased toward Denver. It returns
-// ErrNotFound when there is no match; any other error (network trouble, quota,
-// a rejected key) is worth retrying on a later run.
-func (c *Client) Geocode(ctx context.Context, query string) (project.Point, error) {
+// Geocode resolves query to a coordinate, biased toward the city (which also
+// keeps ambiguous street names like "Broadway" from resolving elsewhere). It
+// returns ErrNotFound when there is no match; any other error (network
+// trouble, quota, a rejected key) is worth retrying on a later run.
+func (c *Client) Geocode(ctx context.Context, query string, in city.City) (project.Point, error) {
 	params := url.Values{
-		"address": {query},
-		"bounds":  {denverBounds},
+		"address": {query + ", " + in.Label},
+		"bounds":  {in.GeocodeBounds},
 		"region":  {"us"},
 		"key":     {c.APIKey},
 	}

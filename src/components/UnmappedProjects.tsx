@@ -9,7 +9,7 @@ const REASON_LABEL: Record<UnmappedProject['unmappedReason'], string> = {
     pending: 'Location not determined yet',
     'no-location-found': 'No specific location could be determined',
     'geocode-failed': "Location couldn't be geocoded",
-    'outside-denver': 'Geocoded location falls outside Denver',
+    'outside-city': 'Geocoded location falls outside the city',
 };
 
 export const UnmappedProjects = ({ projects }: UnmappedProjectsProps) => {

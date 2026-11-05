@@ -1,4 +1,6 @@
-// Package scraper fetches the DOTI "Projects" page and parses it into projects.
+// Package scraper fetches each city's projects page(s) and parses them into
+// projects. Denver's DOTI page is handled here; other cities get their own
+// file.
 package scraper
 
 import (
@@ -45,22 +47,35 @@ func NewFetcher(url string) *Fetcher {
 
 // Fetch downloads the page and returns its Transportation/Mobility projects.
 func (fetcher *Fetcher) Fetch(ctx context.Context) ([]project.Project, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetcher.URL, nil)
+	body, err := get(ctx, fetcher.Client, fetcher.URL)
+	if err != nil {
+		return nil, fmt.Errorf("fetch DOTI page: %w", err)
+	}
+	defer body.Close()
+	return Parse(body)
+}
+
+// get requests url and returns its body, capped at maxBodyBytes. The caller
+// closes it.
+func get(ctx context.Context, client *http.Client, url string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", userAgent)
 
-	resp, err := fetcher.Client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch DOTI page: %w", err)
+		return nil, err
 	}
-	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetch DOTI page: unexpected status %s", resp.Status)
+		resp.Body.Close()
+		return nil, fmt.Errorf("unexpected status %s", resp.Status)
 	}
-	return Parse(io.LimitReader(resp.Body, maxBodyBytes))
+	return struct {
+		io.Reader
+		io.Closer
+	}{io.LimitReader(resp.Body, maxBodyBytes), resp.Body}, nil
 }
 
 // Parse parses the DOTI "Projects" page HTML. The page groups projects as
@@ -150,7 +165,8 @@ func resolveDetailURL(href string) string {
 //     ?transfer=<guid>), and, for denvergov.org, the directory prefix before
 //     "Programs-Services/" (the same project is linked as both
 //     /Government/Departments/... and
-//     /Government/Agencies-Departments-Offices/...). The fragment is kept,
+//     /Government/Agencies-Departments-Offices/...), and for lakewoodco.gov,
+//     "Local-Government" vs "Government". The fragment is kept,
 //     since distinct projects link to different #sections of one page.
 //   - Without one, the key is the normalized title.
 func sourceKey(title string, detailURL *string) string {
@@ -162,6 +178,11 @@ func sourceKey(title string, detailURL *string) string {
 				if _, rest, ok := strings.Cut(path, "/programs-services/"); ok {
 					path = "programs-services/" + rest
 				}
+			}
+			if host == "lakewoodco.gov" {
+				// The same page is linked under both /Local-Government/ and
+				// /Government/.
+				path = strings.Replace(path, "/local-government/", "/government/", 1)
 			}
 			key := host + "/" + strings.TrimPrefix(path, "/")
 			if u.Fragment != "" {

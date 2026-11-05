@@ -26,7 +26,7 @@ type neighborhoodEntry struct {
 	aliases   []string
 }
 
-var neighborhoods = []neighborhoodEntry{
+var denverNeighborhoods = []neighborhoodEntry{
 	// Central
 	{"Baker", []string{"Baker"}},
 	{"Capitol Hill", []string{"Capitol Hill"}},
@@ -138,13 +138,19 @@ type aliasEntry struct {
 	pattern   string
 }
 
-// aliasTable is sorted longest alias first, so e.g. "North Park Hill" wins
-// over "Park Hill" at the same starting position, and once matched, the scan
-// moves past it entirely rather than separately matching "Park Hill" again
-// inside it.
-var aliasTable = func() []aliasEntry {
+// Neighborhoods finds a city's named neighborhoods in free text.
+type Neighborhoods struct {
+	// aliasTable is sorted longest alias first, so e.g. "North Park Hill" wins
+	// over "Park Hill" at the same starting position, and once matched, the scan
+	// moves past it entirely rather than separately matching "Park Hill" again
+	// inside it.
+	aliasTable []aliasEntry
+	re         *regexp2.Regexp
+}
+
+func newNeighborhoods(entries []neighborhoodEntry) *Neighborhoods {
 	var table []aliasEntry
-	for _, n := range neighborhoods {
+	for _, n := range entries {
 		for _, alias := range n.aliases {
 			pattern, ok := customPatterns[alias]
 			if !ok {
@@ -154,27 +160,29 @@ var aliasTable = func() []aliasEntry {
 		}
 	}
 	sort.SliceStable(table, func(i, j int) bool { return len(table[i].alias) > len(table[j].alias) })
-	return table
-}()
 
-var neighborhoodRE = func() *regexp2.Regexp {
-	patterns := make([]string, len(aliasTable))
-	for i, e := range aliasTable {
+	patterns := make([]string, len(table))
+	for i, e := range table {
 		patterns[i] = e.pattern
 	}
-	return regexp2.MustCompile(`\b(?:`+strings.Join(patterns, "|")+`)\b`, regexp2.None)
-}()
+	return &Neighborhoods{
+		aliasTable: table,
+		re:         regexp2.MustCompile(`\b(?:`+strings.Join(patterns, "|")+`)\b`, regexp2.None),
+	}
+}
 
-// findNeighborhoods finds every official Denver neighborhood named in text,
-// returning their canonical names (deduped, in order of first mention).
-// Matching requires the capitalized proper-noun form, same convention as the
-// street patterns in extract.go — it's what keeps "the project area" from
-// matching anything.
-func findNeighborhoods(text string) []string {
+// DenverNeighborhoods matches Denver's official neighborhoods.
+var DenverNeighborhoods = newNeighborhoods(denverNeighborhoods)
+
+// find finds every neighborhood named in text, returning their canonical
+// names (deduped, in order of first mention). Matching requires the
+// capitalized proper-noun form, same convention as the street patterns in
+// extract.go — it's what keeps "the project area" from matching anything.
+func (n *Neighborhoods) find(text string) []string {
 	var found []string
-	for _, match := range findAll(neighborhoodRE, text) {
+	for _, match := range findAll(n.re, text) {
 		canonical := match[0]
-		for _, e := range aliasTable {
+		for _, e := range n.aliasTable {
 			if e.alias == match[0] {
 				canonical = e.canonical
 				break

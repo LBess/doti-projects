@@ -44,20 +44,24 @@ func (f fakeSource) Fetch(context.Context) ([]project.Project, error) { return f
 type fakeStore struct {
 	active     int
 	reconciled int
+	city       string
 	startedAt  time.Time
 	pending    []project.Project
 	placements map[string]project.Placement
 }
 
-func (f *fakeStore) CountActive(context.Context) (int, error) { return f.active, nil }
-func (f *fakeStore) Reconcile(_ context.Context, at time.Time, scraped []project.Project) (store.ReconcileResult, error) {
+func (f *fakeStore) CountActive(context.Context, string) (int, error) { return f.active, nil }
+func (f *fakeStore) Reconcile(_ context.Context, city string, at time.Time, scraped []project.Project) (store.ReconcileResult, error) {
 	f.reconciled++
+	f.city = city
 	f.startedAt = at
 	return store.ReconcileResult{}, nil
 }
 
-func (f *fakeStore) ListPending(context.Context) ([]project.Project, error) { return f.pending, nil }
-func (f *fakeStore) SetPlacement(_ context.Context, key string, p project.Placement) error {
+func (f *fakeStore) ListPending(context.Context, string) ([]project.Project, error) {
+	return f.pending, nil
+}
+func (f *fakeStore) SetPlacement(_ context.Context, _, key string, p project.Placement) error {
 	if f.placements == nil {
 		f.placements = map[string]project.Placement{}
 	}
@@ -85,10 +89,13 @@ func TestRefresh(t *testing.T) {
 
 	t.Run("trusted scrape is reconciled with the run start time", func(t *testing.T) {
 		st := &fakeStore{active: 3}
-		r := New(fakeSource{projects: three}, st, nil, log)
+		r := New("other", fakeSource{projects: three}, st, nil, log)
 		r.now = func() time.Time { return fixed }
 		if err := r.Refresh(context.Background()); err != nil {
 			t.Fatal(err)
+		}
+		if st.city != "other" {
+			t.Errorf("reconciled city = %q, want other", st.city)
 		}
 		if st.reconciled != 1 || !st.startedAt.Equal(fixed) {
 			t.Errorf("reconciled = %d at %v", st.reconciled, st.startedAt)
@@ -97,7 +104,7 @@ func TestRefresh(t *testing.T) {
 
 	t.Run("suspicious scrape leaves the database alone", func(t *testing.T) {
 		st := &fakeStore{active: 30}
-		r := New(fakeSource{projects: three}, st, nil, log)
+		r := New("other", fakeSource{projects: three}, st, nil, log)
 		if err := r.Refresh(context.Background()); err == nil {
 			t.Fatal("expected an error")
 		}
@@ -108,7 +115,7 @@ func TestRefresh(t *testing.T) {
 
 	t.Run("fetch failure leaves the database alone", func(t *testing.T) {
 		st := &fakeStore{active: 3}
-		r := New(fakeSource{err: errors.New("boom")}, st, nil, log)
+		r := New("other", fakeSource{err: errors.New("boom")}, st, nil, log)
 		if err := r.Refresh(context.Background()); err == nil {
 			t.Fatal("expected an error")
 		}
@@ -125,7 +132,7 @@ func TestRefreshLocatesPending(t *testing.T) {
 	t.Run("places pending projects, leaving failures pending", func(t *testing.T) {
 		st := &fakeStore{active: 3, pending: three}
 		loc := &fakeLocator{failFor: "b"}
-		r := New(fakeSource{projects: three}, st, loc, log)
+		r := New("other", fakeSource{projects: three}, st, loc, log)
 		if err := r.Refresh(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -139,7 +146,7 @@ func TestRefreshLocatesPending(t *testing.T) {
 
 	t.Run("no locator means projects are stored but not placed", func(t *testing.T) {
 		st := &fakeStore{active: 3, pending: three}
-		r := New(fakeSource{projects: three}, st, nil, log)
+		r := New("other", fakeSource{projects: three}, st, nil, log)
 		if err := r.Refresh(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -151,7 +158,7 @@ func TestRefreshLocatesPending(t *testing.T) {
 	t.Run("a rejected scrape does not locate anything", func(t *testing.T) {
 		st := &fakeStore{active: 30, pending: three}
 		loc := &fakeLocator{}
-		r := New(fakeSource{projects: three}, st, loc, log)
+		r := New("other", fakeSource{projects: three}, st, loc, log)
 		if err := r.Refresh(context.Background()); err == nil {
 			t.Fatal("expected an error")
 		}

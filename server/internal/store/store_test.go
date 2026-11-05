@@ -52,7 +52,7 @@ func TestReconcileLifecycle(t *testing.T) {
 	t0 := time.Now().Add(-24 * time.Hour) // keep every fake run in the past
 
 	// Run 1: a and b appear.
-	res, err := s.Reconcile(ctx, t0, []project.Project{proj("a"), proj("b")})
+	res, err := s.Reconcile(ctx, "denver", t0, []project.Project{proj("a"), proj("b")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestReconcileLifecycle(t *testing.T) {
 	}
 
 	// Run 2: b is gone, c is new.
-	res, err = s.Reconcile(ctx, t0.Add(time.Hour), []project.Project{proj("a"), proj("c")})
+	res, err = s.Reconcile(ctx, "denver", t0.Add(time.Hour), []project.Project{proj("a"), proj("c")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestReconcileLifecycle(t *testing.T) {
 	}
 
 	// Run 3: b reappears and is revived, not re-added.
-	res, err = s.Reconcile(ctx, t0.Add(2*time.Hour), []project.Project{proj("a"), proj("b"), proj("c")})
+	res, err = s.Reconcile(ctx, "denver", t0.Add(2*time.Hour), []project.Project{proj("a"), proj("b"), proj("c")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestReconcileLifecycle(t *testing.T) {
 	edited.Title = "Renamed"
 	url := "https://example.com/a"
 	edited.DetailURL = &url
-	if _, err := s.Reconcile(ctx, t0.Add(3*time.Hour), []project.Project{edited, proj("b"), proj("c")}); err != nil {
+	if _, err := s.Reconcile(ctx, "denver", t0.Add(3*time.Hour), []project.Project{edited, proj("b"), proj("c")}); err != nil {
 		t.Fatal(err)
 	}
 	list, _ := s.List(ctx, StatusActive)
@@ -106,10 +106,10 @@ func TestPlacement(t *testing.T) {
 	ctx := context.Background()
 	t0 := time.Now().Add(-24 * time.Hour)
 
-	if _, err := s.Reconcile(ctx, t0, []project.Project{proj("a"), proj("b")}); err != nil {
+	if _, err := s.Reconcile(ctx, "denver", t0, []project.Project{proj("a"), proj("b")}); err != nil {
 		t.Fatal(err)
 	}
-	pending, err := s.ListPending(ctx)
+	pending, err := s.ListPending(ctx, "denver")
 	if err != nil || len(pending) != 2 {
 		t.Fatalf("pending = %v, %v", pending, err)
 	}
@@ -119,13 +119,13 @@ func TestPlacement(t *testing.T) {
 		Location: &project.Location{Kind: project.KindPoint, Label: "A & B"},
 		Position: &project.Point{Lat: 39.74, Lng: -104.99},
 	}
-	if err := s.SetPlacement(ctx, "a", mapped); err != nil {
+	if err := s.SetPlacement(ctx, "denver", "a", mapped); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetPlacement(ctx, "b", project.Placement{Status: project.NoLocationFound}); err != nil {
+	if err := s.SetPlacement(ctx, "denver", "b", project.Placement{Status: project.NoLocationFound}); err != nil {
 		t.Fatal(err)
 	}
-	if pending, _ := s.ListPending(ctx); len(pending) != 0 {
+	if pending, _ := s.ListPending(ctx, "denver"); len(pending) != 0 {
 		t.Errorf("pending after placing = %v", pending)
 	}
 
@@ -144,11 +144,58 @@ func TestPlacement(t *testing.T) {
 	// changed goes back to pending.
 	changed := proj("b")
 	changed.Description = "something new"
-	if _, err := s.Reconcile(ctx, t0.Add(time.Hour), []project.Project{proj("a"), changed}); err != nil {
+	if _, err := s.Reconcile(ctx, "denver", t0.Add(time.Hour), []project.Project{proj("a"), changed}); err != nil {
 		t.Fatal(err)
 	}
-	pending, _ = s.ListPending(ctx)
+	pending, _ = s.ListPending(ctx, "denver")
 	if len(pending) != 1 || pending[0].SourceKey != "b" {
 		t.Errorf("pending after text change = %v, want just b", pending)
+	}
+}
+
+func TestCitiesAreIndependent(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	t0 := time.Now().Add(-24 * time.Hour)
+
+	// The same key in two cities is two projects.
+	if _, err := s.Reconcile(ctx, "denver", t0, []project.Project{proj("a"), proj("b")}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.Reconcile(ctx, "other", t0, []project.Project{proj("a")})
+	if err != nil || res.Added != 1 {
+		t.Fatalf("other run = %+v, %v", res, err)
+	}
+	list, _ := s.List(ctx, StatusActive)
+	if len(list) != 3 {
+		t.Fatalf("list = %v, want 3 projects", list)
+	}
+
+	// A scrape of one city never completes another city's projects.
+	res, err = s.Reconcile(ctx, "other", t0.Add(time.Hour), []project.Project{proj("c")})
+	if err != nil || res.Added != 1 || res.Completed != 1 {
+		t.Errorf("second other run = %+v, %v", res, err)
+	}
+	if n, _ := s.CountActive(ctx, "denver"); n != 2 {
+		t.Errorf("denver active = %d, want 2", n)
+	}
+	if n, _ := s.CountActive(ctx, "other"); n != 1 {
+		t.Errorf("other active = %d, want 1", n)
+	}
+
+	// Placing a project only affects its own city's copy.
+	if err := s.SetPlacement(ctx, "other", "c", project.Placement{Status: project.NoLocationFound}); err != nil {
+		t.Fatal(err)
+	}
+	if pending, _ := s.ListPending(ctx, "other"); len(pending) != 0 {
+		t.Errorf("other pending = %v", pending)
+	}
+	if pending, _ := s.ListPending(ctx, "denver"); len(pending) != 2 {
+		t.Errorf("denver pending = %v, want 2", pending)
+	}
+	for _, p := range list {
+		if p.City == "" {
+			t.Errorf("project %s has no city", p.SourceKey)
+		}
 	}
 }

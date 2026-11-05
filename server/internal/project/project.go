@@ -1,15 +1,17 @@
-// Package project defines the shape of a DOTI project as it is scraped,
+// Package project defines the shape of a city project as it is scraped,
 // stored, and served.
 package project
 
-// Project is a single DOTI project. SourceKey is its stable identity across
+// Project is a single city project. City is the ID of the city it belongs to
+// (see package city). SourceKey is its stable identity within that city across
 // scrapes (see scraper.sourceKey) and is served to the frontend as `id`.
 //
-// The scraper fills in only the first four fields. Position, Location and
+// The scraper fills in only the title, description and detail URL. Position, Location and
 // UnmappedReason come from geocoding (see Placement) and are populated when a
 // project is read back from the store: a project has a Position and Location
 // when it can be mapped, and an UnmappedReason otherwise.
 type Project struct {
+	City        string  `json:"city"`
 	SourceKey   string  `json:"id"`
 	Title       string  `json:"title"`
 	Description string  `json:"description"`
@@ -48,7 +50,7 @@ const (
 	Mapped          = "mapped"
 	NoLocationFound = "no-location-found"
 	GeocodeFailed   = "geocode-failed"
-	OutsideDenver   = "outside-denver"
+	OutsideCity     = "outside-city"
 )
 
 // Placement is the outcome of trying to put a project on the map. Status is
